@@ -512,7 +512,7 @@ export async function POST(request: Request) {
 
                   // Extract phase
                   const topUrls = searchResult.data
-                    .slice(0, 1)
+                    .slice(0, 3)
                     .map((result: any) => result.url);
 
                   const newFindings = await extractFromUrls([
