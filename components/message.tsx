@@ -312,6 +312,8 @@ const PurePreviewMessage = ({
                           data=""
                           isLoading={true}
                         />
+                      ) : toolName === 'search' ? (
+                        <SearchResults results={[]} isLoading={true} />
                       ) : toolName === 'deepResearch' ? (
                         <DeepResearchProgress
                           state={state}
