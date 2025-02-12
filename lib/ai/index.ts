@@ -16,7 +16,7 @@ const VALID_REASONING_MODELS = [
 ] as const;
 
 // Models that support JSON structured output
-const JSON_SUPPORTED_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o1', 'o3-mini'] as const;
+const JSON_SUPPORTED_MODELS = ['gpt-4o', 'gpt-4o-mini', 'o1-mini', 'o1'] as const;
 
 // Helper to check if model supports JSON
 export const supportsJsonOutput = (modelId: string) =>
@@ -67,6 +67,8 @@ export const customModel = (apiIdentifier: string, forReasoning: boolean = false
   const model = modelId === 'deepseek-ai/DeepSeek-R1'
     ? togetherai(modelId)
     : openai(modelId);
+
+  console.log("Using model:", modelId);
 
   return wrapLanguageModel({
     model,

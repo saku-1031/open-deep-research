@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import { auth, signIn } from '@/app/(auth)/auth';
 import { customModel } from '@/lib/ai';
-import { models } from '@/lib/ai/models';
+import { models, reasoningModels } from '@/lib/ai/models';
 import { rateLimiter } from '@/lib/rate-limit';
 import {
   codePrompt,
@@ -54,7 +54,7 @@ const app = new FirecrawlApp({
   apiKey: process.env.FIRECRAWL_API_KEY || '',
 });
 
-const reasoningModel = customModel(process.env.REASONING_MODEL || 'o1-mini', true);
+// const reasoningModel = customModel(process.env.REASONING_MODEL || 'o1-mini', true);
 
 export async function POST(request: Request) {
   const maxDuration = process.env.MAX_DURATION
@@ -65,7 +65,8 @@ export async function POST(request: Request) {
     id,
     messages,
     modelId,
-  }: { id: string; messages: Array<Message>; modelId: string } =
+    reasoningModelId,
+  }: { id: string; messages: Array<Message>; modelId: string; reasoningModelId: string } =
     await request.json();
 
   let session = await auth();
@@ -112,8 +113,9 @@ export async function POST(request: Request) {
   }
 
   const model = models.find((model) => model.id === modelId);
+  const reasoningModel = reasoningModels.find((model) => model.id === reasoningModelId);
 
-  if (!model) {
+  if (!model || !reasoningModel) {
     return new Response('Model not found', { status: 404 });
   }
 
@@ -147,7 +149,8 @@ export async function POST(request: Request) {
       });
 
       const result = streamText({
-        model: customModel(model.apiIdentifier),
+        // Router model
+        model: customModel(model.apiIdentifier, false),
         system: systemPrompt,
         messages: coreMessages,
         maxSteps: 10,
@@ -768,30 +771,40 @@ export async function POST(request: Request) {
                   const timeRemainingMinutes =
                     Math.round((timeRemaining / 1000 / 60) * 10) / 10;
 
-                  const result = await generateObject({
-                    model: customModel(model.apiIdentifier, true),
-                    schema: z.object({
-                      analysis: z.object({
-                        summary: z.string(),
-                        gaps: z.array(z.string()),
-                        nextSteps: z.array(z.string()),
-                        shouldContinue: z.boolean(),
-                        nextSearchTopic: z.string().optional(),
-                        urlToSearch: z.string().optional(),
-                      }),
-                    }),
+                  // Reasoning model
+                  const result = await generateText({
+                    model: customModel(reasoningModel.apiIdentifier, true),
                     prompt: `You are a research agent analyzing findings about: ${topic}
                             You have ${timeRemainingMinutes} minutes remaining to complete the research but you don't need to use all of it.
                             Current findings: ${findings
                               .map((f) => `[From ${f.source}]: ${f.text}`)
                               .join('\n')}
                             What has been learned? What gaps remain? What specific aspects should be investigated next if any?
-                            If you need to search for more information, set nextSearchTopic.
-                            If you need to search for more information in a specific URL, set urlToSearch.
+                            If you need to search for more information, include a nextSearchTopic.
+                            If you need to search for more information in a specific URL, include a urlToSearch.
                             Important: If less than 1 minute remains, set shouldContinue to false to allow time for final synthesis.
-                            If I have enough information, set shouldContinue to false.`,
+                            If I have enough information, set shouldContinue to false.
+                            
+                            Respond in this exact JSON format:
+                            {
+                              "analysis": {
+                                "summary": "summary of findings",
+                                "gaps": ["gap1", "gap2"],
+                                "nextSteps": ["step1", "step2"],
+                                "shouldContinue": true/false,
+                                "nextSearchTopic": "optional topic",
+                                "urlToSearch": "optional url"
+                              }
+                            }`,
                   });
-                  return result.object.analysis;
+
+                  try {
+                    const parsed = JSON.parse(result.text);
+                    return parsed.analysis;
+                  } catch (error) {
+                    console.error('Failed to parse JSON response:', error);
+                    return null;
+                  }
                 } catch (error) {
                   console.error('Analysis error:', error);
                   return null;
@@ -810,7 +823,7 @@ export async function POST(request: Request) {
                     });
 
                     const result = await app.extract([url], {
-                      prompt: `Extract key information about ${topic}. Focus on facts, data, and expert opinions.`,
+                      prompt: `Extract key information about ${topic}. Focus on facts, data, and expert opinions. Analysis should be full of details and very comprehensive.`,
                     });
 
                     if (result.success) {
@@ -910,7 +923,7 @@ export async function POST(request: Request) {
 
                   // Extract phase
                   const topUrls = searchResult.data
-                    .slice(0, 3)
+                    .slice(0, 1)
                     .map((result: any) => result.url);
 
                   const newFindings = await extractFromUrls([
@@ -979,7 +992,7 @@ export async function POST(request: Request) {
                 });
 
                 const finalAnalysis = await generateText({
-                  model: reasoningModel,
+                  model: customModel(reasoningModel.apiIdentifier, true),
                   maxTokens: 16000,
                   prompt: `Create a comprehensive long analysis of ${topic} based on these findings:
                           ${researchState.findings
@@ -988,7 +1001,7 @@ export async function POST(request: Request) {
                           ${researchState.summaries
                             .map((s) => `[Summary]: ${s}`)
                             .join('\n')}
-                          Provide key insights, conclusions, and any remaining uncertainties. Include citations to sources where appropriate. This analysis should be very comprehensive and full of details. It is expected to be long.`,
+                          Provide all the thoughts processes including findings details,key insights, conclusions, and any remaining uncertainties. Include citations to sources where appropriate. This analysis should be very comprehensive and full of details. It is expected to be very long, detailed and comprehensive.`,
                 });
 
                 addActivity({

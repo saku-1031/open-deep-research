@@ -20,12 +20,14 @@ export function Chat({
   id,
   initialMessages,
   selectedModelId,
+  selectedReasoningModelId,
   selectedVisibilityType,
   isReadonly,
 }: {
   id: string;
   initialMessages: Array<Message>;
   selectedModelId: string;
+  selectedReasoningModelId: string;
   selectedVisibilityType: VisibilityType;
   isReadonly: boolean;
 }) {
@@ -43,7 +45,7 @@ export function Chat({
     reload,
   } = useChat({
     id,
-    body: { id, modelId: selectedModelId },
+    body: { id, modelId: selectedModelId, reasoningModelId: selectedReasoningModelId },
     initialMessages,
     experimental_throttle: 100,
     onFinish: () => {
@@ -83,6 +85,7 @@ export function Chat({
         <ChatHeader
           chatId={id}
           selectedModelId={selectedModelId}
+          selectedReasoningModelId={selectedReasoningModelId}
           selectedVisibilityType={selectedVisibilityType}
           isReadonly={isReadonly}
         />
